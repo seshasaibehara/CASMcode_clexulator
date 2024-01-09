@@ -74,6 +74,13 @@ double ClusterExpansion::local_delta_value(DoFKey const &key,
          m_correlations.local_delta(key, linear_site_index, new_value, p);
 }
 
+double ClusterExpansion::local_grad_delta_value(
+    DoFKey const &key, Index linear_site_index,
+    Eigen::VectorXd const &new_value) {
+  return m_coefficients * m_correlations.local_delta_grad_correlations(
+                              key, linear_site_index, new_value);
+}
+
 double ClusterExpansion::global_delta_value(DoFKey const &key,
                                             Eigen::VectorXd const &new_value) {
   auto const &e = m_correlations.extensive();

@@ -699,5 +699,140 @@ Eigen::MatrixXd const Correlations::grad_correlations(DoFKey const &key) {
   return gcorr;
 }
 
+Eigen::MatrixXd const Correlations::local_delta_grad_correlations(
+    DoFKey const &key, Index linear_site_index,
+    Eigen::VectorXd const &new_value) {
+  ClexParamKey paramkey;
+  clexulator::ClexParamKey corr_key(m_clexulator->param_pack().key("corr"));
+  clexulator::ClexParamKey dof_key;
+
+  paramkey = m_clexulator->param_pack().key("diff/corr/" + key + "_var");
+  dof_key = m_clexulator->param_pack().key(key + "_var");
+
+  std::string em_corr, em_dof;
+  em_corr = m_clexulator->param_pack().eval_mode(corr_key);
+  em_dof = m_clexulator->param_pack().eval_mode(dof_key);
+
+  // this const_cast is not great...
+  // but it seems like the only place passing const Clexulator is a problem and
+  // it is not actually changing clexulator before/after this function
+  const_cast<Clexulator &>(*m_clexulator)
+      .param_pack()
+      .set_eval_mode(corr_key, "DIFF");
+  const_cast<Clexulator &>(*m_clexulator)
+      .param_pack()
+      .set_eval_mode(dof_key, "DIFF");
+
+  if (m_point_corr.size() != m_corr_size) {
+    m_point_corr.resize(m_corr_size);
+    m_point_corr.setZero();
+  }
+
+  if (linear_site_index < 0 ||
+      linear_site_index >= m_supercell_neighbor_list->n_sites()) {
+    std::stringstream msg;
+    msg << "Error in Correlations::point: "
+        << "invalid linear_site_index.";
+    throw std::runtime_error(msg.str());
+  }
+
+  // fill up reference point correlations
+  Index unitcell_index =
+      m_supercell_neighbor_list->unitcell_index(linear_site_index);
+  Index neighbor_index =
+      m_supercell_neighbor_list->neighbor_index(linear_site_index);
+
+  if (neighbor_index == -1) {
+    std::stringstream msg;
+    msg << "Error in Correlations::point: invalid linear_site_index."
+        << "No point correlations associated with the site.";
+    throw std::runtime_error(msg.str());
+  }
+
+  auto const &unitcell_nlist = m_supercell_neighbor_list->sites(unitcell_index);
+  m_clexulator->calc_restricted_point_corr(
+      *m_dof_values, unitcell_nlist.data(), neighbor_index, m_point_corr.data(),
+      m_corr_indices_begin, m_corr_indices_end);
+
+  Eigen::MatrixXd gcorr_func_before;
+  Eigen::MatrixXd gcorr_before;
+  Index scel_vol = m_supercell_neighbor_list->n_unitcells();
+  gcorr_before.setZero(m_dof_values->local_dof_values.at(key).size(),
+                       m_clexulator->corr_size());
+
+  // Holds contribution to global correlations from a particular Neighborhood
+  Index l;
+  // for (int v = 0; v < scel_vol; v++) {
+  for (Index c = 0; c < m_clexulator->corr_size(); ++c) {
+    gcorr_func_before = m_clexulator->param_pack().read(paramkey(c));
+
+    for (Index n = 0; n < m_clexulator->nlist_size(); ++n) {
+      l = m_supercell_neighbor_list->sites(unitcell_index)[n];
+      // for(Index i=0; i<gcorr_func.cols(); ++i){
+      gcorr_before.block(l * gcorr_func_before.rows(), c,
+                         gcorr_func_before.rows(), 1) +=
+          gcorr_func_before.col(n);
+      // std::cout << "Block: (" << l * gcorr_func.rows() << ", " << c << ",
+      // " << gcorr_func.rows() << ", " << 1 << ") += " <<
+      // gcorr_func.col(n).transpose() << "\n";
+    }
+  }
+  //   }
+  //}
+
+  if (m_delta_corr.size() != m_corr_size) {
+    m_delta_corr.resize(m_corr_size);
+    m_delta_corr.setZero();
+  }
+  auto const &nlist_sites = m_supercell_neighbor_list->sites(unitcell_index);
+  long int const *nlist_begin = nlist_sites.data();
+
+  // Get current value
+  Eigen::MatrixXd const &values = m_dof_values->local_dof_values.at(key);
+  Eigen::VectorXd curr_value = values.col(linear_site_index);
+
+  // Apply change (at the end we will unapply)
+  Eigen::MatrixXd &mutable_values = const_cast<Eigen::MatrixXd &>(values);
+  mutable_values.col(linear_site_index) = new_value;
+
+  // Calculate after
+  m_clexulator->calc_restricted_point_corr(
+      *m_dof_values, nlist_begin, neighbor_index, m_delta_corr.data(),
+      m_corr_indices_begin, m_corr_indices_end);
+
+  Eigen::MatrixXd gcorr_func_after;
+  Eigen::MatrixXd gcorr_after;
+  gcorr_after.setZero(m_dof_values->local_dof_values.at(key).size(),
+                      m_clexulator->corr_size());
+
+  // Holds contribution to global correlations from a particular Neighborhood
+  //  for (int v = 0; v < scel_vol; v++) {
+  for (Index c = 0; c < m_clexulator->corr_size(); ++c) {
+    gcorr_func_after = m_clexulator->param_pack().read(paramkey(c));
+
+    for (Index n = 0; n < m_clexulator->nlist_size(); ++n) {
+      l = m_supercell_neighbor_list->sites(unitcell_index)[n];
+      // for(Index i=0; i<gcorr_func.cols(); ++i){
+      gcorr_after.block(l * gcorr_func_after.rows(), c, gcorr_func_after.rows(),
+                        1) += gcorr_func_after.col(n);
+      // std::cout << "Block: (" << l * gcorr_func.rows() << ", " << c << ",
+      // " << gcorr_func.rows() << ", " << 1 << ") += " <<
+      // gcorr_func.col(n).transpose() << "\n";
+    }
+  }
+  //  }
+  // }
+
+  // Unapply change
+  mutable_values.col(linear_site_index) = curr_value;
+  const_cast<Clexulator &>(*m_clexulator)
+      .param_pack()
+      .set_eval_mode(corr_key, em_corr);
+  const_cast<Clexulator &>(*m_clexulator)
+      .param_pack()
+      .set_eval_mode(dof_key, em_dof);
+  return gcorr_after - gcorr_before;
+}
+
 }  // namespace clexulator
 }  // namespace CASM

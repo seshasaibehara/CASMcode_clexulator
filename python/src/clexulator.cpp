@@ -1195,7 +1195,15 @@ PYBIND11_MODULE(_clexulator, m) {
 		where m represents number of correlations and 
 		n represents number of degrees of freedom
           )pbdoc",
-           py::arg("dof_key"));
+           py::arg("dof_key"))
+      .def("local_delta_grad_correlations",
+           &clexulator::Correlations::local_delta_grad_correlations,
+           py::return_value_policy::reference_internal, R"pbdoc(
+          Calculates and returns delta gradients of correlations with respect to 
+	  degrees of freedom corresponding to `dof_key`
+          )pbdoc",
+           py::arg("dof_key"), py::arg("linear_site_index"),
+           py::arg("new_value"));
 
   py::class_<clexulator::LocalCorrelations,
              std::shared_ptr<clexulator::LocalCorrelations>>(
@@ -1477,6 +1485,12 @@ PYBIND11_MODULE(_clexulator, m) {
               Linear site index where a local DoF value is changed.
           new_value: array_like
              The value the local DoF is changed to, in the prim basis.
+          )pbdoc",
+           py::arg("key"), py::arg("linear_site_index"), py::arg("new_value"))
+      .def("local_grad_delta_value",
+           &clexulator::ClusterExpansion::local_grad_delta_value, R"pbdoc(
+          Calculate the change in cluster expansion value due to a change in a local DoF value
+
           )pbdoc",
            py::arg("key"), py::arg("linear_site_index"), py::arg("new_value"))
       .def("global_delta_value",

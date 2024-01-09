@@ -55,6 +55,9 @@ class ClusterExpansion {
   double local_delta_value(DoFKey const &key, Index linear_site_index,
                            Eigen::VectorXd const &new_value);
 
+  double local_grad_delta_value(DoFKey const &key, Index linear_site_index,
+                                Eigen::VectorXd const &new_value);
+
   double global_delta_value(DoFKey const &key,
                             Eigen::VectorXd const &new_value);
 

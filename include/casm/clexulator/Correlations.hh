@@ -140,6 +140,11 @@ class Correlations {
   /// corresponding to key
   Eigen::MatrixXd const grad_correlations(DoFKey const &key);
 
+  // --- Local change in gradients of correlations
+  Eigen::MatrixXd const local_delta_grad_correlations(
+      DoFKey const &key, Index linear_site_index,
+      Eigen::VectorXd const &new_value);
+
  private:
   /// Holds all correlation indices
   std::vector<unsigned int> m_correlation_indices;
